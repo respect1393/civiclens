@@ -29,7 +29,3 @@ uploads/
 
 # The Prisma Client is generated from schema.prisma at install time.
 src/generated/
-
-# Preserve these for version control
-prisma/schema.prisma
-prisma/migrations/
