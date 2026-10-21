@@ -1,0 +1,17 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- The INTERNET permission is required for development. Specifically,
+         the Flutter tool needs it to communicate with the running application
+         to allow setting breakpoints, to provide hot reload, etc.
+    -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- DEVELOPMENT ONLY. The CIVICLENS backend is a local Express server
+         reached over plain http:// while developing:
+           * Android emulator  -> http://10.0.2.2:3000
+           * physical phone    -> http://<LAPTOP_LAN_IP>:3000
+         Android blocks cleartext traffic by default, so debug builds must opt
+         in explicitly. This attribute exists ONLY in the debug (and profile)
+         manifest: release builds keep the platform default, which means a
+         production backend must be served over HTTPS. TLS verification is
+         never disabled anywhere in this app. -->
+    <application android:usesCleartextTraffic="true"/>
+</manifest>

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Launch screen shown by Android while the Flutter engine boots.
+     Reuses the existing CIVICLENS branding: the app mark, centred on the deep
+     navy brand colour, so the screen reads as CivicLens from the first pixel
+     and hands off to the first Flutter frame without a flash of white. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/ic_launcher_background" />
+    <item>
+        <bitmap android:gravity="center" android:src="@drawable/ic_launcher_foreground" />
+    </item>
+</layer-list>
