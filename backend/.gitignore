@@ -1,0 +1,35 @@
+node_modules/
+dist/
+.env
+.env.*
+.env.local
+env.*.local
+# The example file is the only environment file that should be tracked.
+!.env.example
+*.db
+*.db.backup
+*.db.test
+*.sqlite
+*.sqlite3
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite-journal
+logs/
+*.log
+coverage/
+*.tmp
+*.temp
+.DS_Store
+
+# Uploaded citizen images are private runtime data, never committed. The
+# directory itself is kept (with .gitkeep) and re-created at startup.
+uploads/
+!uploads/.gitkeep
+
+# The Prisma Client is generated from schema.prisma at install time.
+src/generated/
+
+# Preserve these for version control
+prisma/schema.prisma
+prisma/migrations/
