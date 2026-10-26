@@ -10,6 +10,7 @@ import { IconAlert, IconRefresh } from './components/ui/Icon';
 import { LoadingState } from './components/ui/LoadingState';
 import { buttonPrimaryClass, buttonSecondaryClass } from './lib/styles';
 import { ActivityPage } from './pages/ActivityPage';
+import { AdminManagementPage } from './pages/AdminManagementPage';
 import { LoginPage } from './pages/LoginPage';
 import { MapPage } from './pages/MapPage';
 import { OverviewPage } from './pages/OverviewPage';
@@ -76,6 +77,8 @@ function RouteView({ route }: { route: Route }) {
       return <ActivityPage />;
     case 'settings':
       return <SettingsPage />;
+    case 'admin':
+      return <AdminManagementPage />;
     default:
       return <NotFoundPage />;
   }

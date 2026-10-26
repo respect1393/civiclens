@@ -7,6 +7,7 @@ export type Route =
   | { page: 'map'; select?: string }
   | { page: 'activity' }
   | { page: 'settings' }
+  | { page: 'admin' }
   | { page: 'not-found'; path: string };
 
 export function parseHash(hash: string): Route {
@@ -29,6 +30,8 @@ export function parseHash(hash: string): Route {
       return { page: 'activity' };
     case 'settings':
       return { page: 'settings' };
+    case 'admin':
+      return { page: 'admin' };
     default:
       break;
   }

@@ -1,3 +1,4 @@
+import { randomBytes } from "crypto";
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
@@ -936,6 +937,322 @@ export function createApp(options: CreateAppOptions = {}) {
       res.json({ id: reportId, deleted: true, imageDeleted });
     } catch (error) {
       console.error("Error deleting report:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Admin-only account management endpoints.
+  //
+  // GET /api/admins and POST /api/admins require a live, database-backed
+  // session whose role is ADMIN. The role is always assigned server-side:
+  // the client can never promote a citizen, and a request body that carries
+  // a `role` field is ignored.
+
+  // POST /api/invitations lets an authenticated administrator issue a
+  // single-use invitation token for creating a new administrator account.
+  // The invitation is tied to a specific email and expires after 7 days.
+
+  /** Shape returned for every administrator row. No password hash or token. */
+  const safeAdmin = (user: {
+    id: string;
+    name: string;
+    email: string;
+    role: string;
+    state: string | null;
+    district: string | null;
+    createdAt: Date;
+  }) => ({
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    state: user.state,
+    district: user.district,
+    createdAt: user.createdAt.toISOString(),
+  });
+
+  const adminCreateSchema = z.object({
+    name: z.string().trim().min(1, "Name is required"),
+    email: z.string().email("Invalid email address"),
+    password: z.string().min(8, "Password must be at least 8 characters long"),
+    state: z.string().trim().min(1, "State is required"),
+    district: z.string().trim().optional(),
+  });
+
+  const invitationCreateSchema = z.object({
+    email: z.string().email("Invalid email address"),
+  });
+
+  // GET /api/admins - list every administrator account.
+  app.get("/api/admins", authenticate, requireAdmin, async (_req, res) => {
+    try {
+      const admins = await prisma.user.findMany({
+        where: { role: "ADMIN" },
+        orderBy: { createdAt: "desc" },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          role: true,
+          state: true,
+          district: true,
+          createdAt: true,
+        },
+      });
+
+      res.json({ data: admins.map(safeAdmin) });
+    } catch (error) {
+      console.error("Error listing administrators:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // POST /api/admins - create a new administrator account.
+  //
+  // This endpoint remains administrator-only. It is not used by the public
+  // login page: public administrator creation goes through
+  // POST /api/auth/register-admin with a valid single-use invitation.
+  app.post("/api/admins", authenticate, requireAdmin, async (req, res) => {
+    try {
+      const result = adminCreateSchema.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).json({
+          error: "Invalid administrator data",
+          details: result.error.format(),
+        });
+      }
+
+      // Normalize email consistently (trim + lowercase) before any lookup or
+      // storage so "Foo@Example.com" and "foo@example.com" collide.
+      const email = result.data.email.trim().toLowerCase();
+      const name = result.data.name.trim();
+      const state = result.data.state.trim();
+      const district = result.data.district?.trim() || null;
+
+      const existingUser = await prisma.user.findUnique({
+        where: { email },
+      });
+
+      if (existingUser) {
+        return res.status(409).json({ error: "Email already registered" });
+      }
+
+      // bcrypt work factor matches the established registration flow (cost 10).
+      const hashedPassword = await bcrypt.hash(result.data.password, 10);
+
+      // The role is always ADMIN here. Any client-supplied `role` in the body
+      // is ignored because the schema above does not include a role field.
+      const user = await prisma.user.create({
+        data: {
+          name,
+          email,
+          passwordHash: hashedPassword,
+          role: "ADMIN",
+          state,
+          district,
+        },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          role: true,
+          state: true,
+          district: true,
+          createdAt: true,
+        },
+      });
+
+      res.status(201).json(safeAdmin(user));
+    } catch (error) {
+      // Prisma unique constraint violations (P2002) are mapped to a clean 409
+      // instead of leaking the driver error to the caller.
+      if (
+        error instanceof Error &&
+        "code" in error &&
+        (error as { code?: string }).code === "P2002"
+      ) {
+        return res.status(409).json({ error: "Email already registered" });
+      }
+
+      console.error("Error creating administrator:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // POST /api/invitations - issue a single-use administrator invitation.
+  //
+  // Only an authenticated administrator may create invitations. The invitation
+  // is bound to a specific email address and expires after 7 days.
+  app.post("/api/invitations", authenticate, requireAdmin, async (req, res) => {
+    try {
+      const result = invitationCreateSchema.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).json({
+          error: "Invalid invitation data",
+          details: result.error.format(),
+        });
+      }
+
+      const email = result.data.email.trim().toLowerCase();
+
+      // A single-use invitation cannot coexist with an unused one for the same
+      // email. Revoke any unused invitation for this email first.
+      await prisma.invitation.updateMany({
+        where: { email, usedAt: null },
+        data: { usedAt: new Date() },
+      });
+
+      const token = randomBytes(32).toString("hex");
+      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+      const invitation = await prisma.invitation.create({
+        data: {
+          token,
+          email,
+          createdById: req.user!.id,
+          expiresAt,
+        },
+        select: {
+          id: true,
+          token: true,
+          email: true,
+          expiresAt: true,
+        },
+      });
+
+      res.status(201).json(invitation);
+    } catch (error) {
+      console.error("Error creating invitation:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // POST /api/auth/register-admin - create an administrator account using a
+  // valid single-use invitation. Publicly accessible but gated by the
+  // invitation, so no unprotected administrator registration is possible.
+  app.post("/api/auth/register-admin", async (req, res) => {
+    try {
+      const schema = z.object({
+        invitationToken: z.string().min(1, "Invitation code is required"),
+        name: z.string().trim().min(1, "Name is required"),
+        email: z.string().email("Invalid email address"),
+        password: z.string().min(8, "Password must be at least 8 characters long"),
+        confirmPassword: z.string().min(1, "Please confirm your password"),
+        state: z.string().trim().min(1, "State is required"),
+        district: z.string().trim().optional(),
+      });
+
+      const result = schema.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).json({
+          error: "Invalid registration data",
+          details: result.error.format(),
+        });
+      }
+
+      const {
+        invitationToken,
+        name,
+        email,
+        password,
+        confirmPassword,
+        state,
+        district,
+      } = result.data;
+
+      if (password !== confirmPassword) {
+        return res.status(400).json({
+          error: "Passwords do not match",
+        });
+      }
+
+      // Look up the invitation.
+      const invitation = await prisma.invitation.findUnique({
+        where: { token: invitationToken },
+        include: { createdBy: true },
+      });
+
+      if (!invitation) {
+        return res.status(400).json({
+          error: "Invalid invitation code",
+        });
+      }
+
+      // Single-use: already consumed.
+      if (invitation.usedAt !== null) {
+        return res.status(400).json({
+          error: "Invitation code has already been used",
+        });
+      }
+
+      // Expired.
+      if (invitation.expiresAt < new Date()) {
+        return res.status(400).json({
+          error: "Invitation code has expired",
+        });
+      }
+
+      // The invitation is bound to a specific email.
+      const normalizedEmail = email.trim().toLowerCase();
+      if (invitation.email !== normalizedEmail) {
+        return res.status(400).json({
+          error: "Invitation code is not valid for this email address",
+        });
+      }
+
+      // Email must not already exist.
+      const existingUser = await prisma.user.findUnique({
+        where: { email: normalizedEmail },
+      });
+
+      if (existingUser) {
+        return res.status(409).json({ error: "Email already registered" });
+      }
+
+      // bcrypt work factor matches the established registration flow (cost 10).
+      const hashedPassword = await bcrypt.hash(password, 10);
+
+      // Create the administrator account and mark the invitation as used so it
+  // cannot be reused. The user is created first, then the invitation is
+  // marked as consumed with the new administrator's id.
+      const user = await prisma.user.create({
+        data: {
+          name: name.trim(),
+          email: normalizedEmail,
+          passwordHash: hashedPassword,
+          role: "ADMIN",
+          state: state.trim(),
+          district: district?.trim() || null,
+        },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          role: true,
+          state: true,
+          district: true,
+          createdAt: true,
+        },
+      });
+
+      await prisma.invitation.update({
+        where: { id: invitation.id },
+        data: { usedAt: new Date(), usedById: user.id },
+      });
+
+      res.status(201).json(safeAdmin(user));
+    } catch (error) {
+      // Prisma unique constraint violations (P2002) are mapped to a clean 409
+      // instead of leaking the driver error to the caller.
+      if (
+        error instanceof Error &&
+        "code" in error &&
+        (error as { code?: string }).code === "P2002"
+      ) {
+        return res.status(409).json({ error: "Email already registered" });
+      }
+
+      console.error("Error creating administrator via invitation:", error);
       res.status(500).json({ error: "Internal server error" });
     }
   });

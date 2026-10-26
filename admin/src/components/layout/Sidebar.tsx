@@ -11,6 +11,7 @@ import {
   IconOverview,
   IconReports,
   IconSettings,
+  IconUser,
 } from '../ui/Icon';
 
 interface NavItem {
@@ -56,6 +57,13 @@ const NAV_ITEMS: NavItem[] = [
     description: 'Preferences',
     path: '/settings',
     icon: IconSettings,
+  },
+  {
+    page: 'admin',
+    label: 'Admin Management',
+    description: 'Manage administrator accounts',
+    path: '/admin',
+    icon: IconUser,
   },
 ];
 
