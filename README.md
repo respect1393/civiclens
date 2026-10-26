@@ -149,6 +149,27 @@ npm run preview  # preview the production build locally
 
 ---
 
+## 🚀 Try the CIVICLENS Prototype
+
+CIVICLENS is available as a temporarily hosted prototype for demonstration and testing.
+
+| Component | Access |
+|---|---|
+| Admin Dashboard | [Open CIVICLENS Admin Dashboard](https://civiclens-mauve.vercel.app) |
+| Backend API | Hosted API used by the mobile application and dashboard |
+| Mobile Application | Install the provided Android application and connect to the hosted backend |
+
+### How to Try CIVICLENS
+
+1. Open the admin dashboard using the link above.
+2. Install and launch the CIVICLENS mobile application on your Android device.
+3. Register or sign in as a citizen.
+4. Submit a civic issue with a photograph and location details.
+5. View and manage submitted reports through the admin dashboard.
+
+> **Prototype Notice:** The hosted services are provided for demonstration and testing. CIVICLENS is not integrated with government or municipal authorities. Reports submitted through this prototype are not dispatched to real civic departments. Hosted services may be unavailable outside the demonstration period.
+---
+
 ## Default local URLs
 
 | Service | URL |
