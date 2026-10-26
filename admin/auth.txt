@@ -1,0 +1,10 @@
+Admin dashboard auth:
+
+Email : admin@example.com
+password : admin12345678
+
+
+This credential is used for inspection during development.
+Since the service are Prototype , Sharing this file doesnt bring anyharm to anyone .
+
+This is Hackathon ,Hack for Social Cause . For Expert inspection of the full working prototype , the auth is given for this purpose only.
