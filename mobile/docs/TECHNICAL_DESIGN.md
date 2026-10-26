@@ -300,3 +300,101 @@ Measured constraints worth keeping in mind when writing tests:
 - Surfacing server-side status history so details can show real transitions.
 - Conflict handling for reports edited on two devices.
 - Offline capture with a retry queue.
+
+## System-level architecture (whole project)
+
+This section describes the entire CIVICLENS deployment: the Flutter citizen app, the Express backend, the SQLite database, on-disk image storage, and the React admin dashboard. Nothing here changes application source code; it is a documentation snapshot of what is implemented.
+
+### Component diagram
+
+```
+ ┌─────────────────┐        HTTPS/HTTP        ┌──────────────────────────┐
+ │   Citizen app   │ ◄───────────────────────► │   CIVICLENS backend    │
+ │  (Flutter, Dart)│                           │   (Express, TS)          │
+ └────────┬────────┘                           └───────────┬─────────────┘
+          │ /api/auth/*  /api/reports/*                    │
+          │                                              │ prisma (SQLite)
+ ┌────────▼────────┐                                      ▼
+ │   OS keychain   │                               ┌─────────────┐
+ │  (session token)│                               │   SQLite    │
+ └─────────────────┘                               │   db        │
+                                                   └──────┬──────┘
+                                                          │ photoPath references
+ ┌───────────────────────────────────────────────────────▼─────────┐
+ │  Image storage (uploads/reports/<sha256>.<ext>)                  │
+ │  content-addressed, atomic temp+rename, traversal-guarded       │
+ └─────────────────────────────────────────────────────────────────┘
+
+ ┌─────────────────┐        HTTPS/HTTP        ┌──────────────────────────┐
+ │   Admin dashboard│ ◄───────────────────────► │   CIVICLENS backend    │
+ │  (React, TS)    │    same /api/* routes    │   (shared)               │
+ └─────────────────┘                           └──────────────────────────┘
+```
+
+### Data flows
+
+**Citizen sign-in / registration**
+1. Citizen submits email + password from `LoginScreen` / `RegisterScreen`.
+2. `AuthService` → `POST /api/auth/register` or `POST /api/auth/login` (login passes through the fixed-window rate limiter: 10 attempts per IP per 15 minutes).
+3. Backend validates with zod, hashes passwords with bcryptjs, issues an HS256 JWT (7-day expiry) signed with `JWT_SECRET`.
+4. The app stores the token in the OS keychain / secure session store; `AuthRepository` restores it at launch (no `/api/auth/me` endpoint exists).
+
+**Citizen files a report**
+1. `ReportRepository.submitReport` → `POST /api/reports` (authenticated; state/district taken from the DB-backed session).
+2. Backend validates payload with zod, inserts the row with the caller's `userId` and geographic info, returns the report.
+3. Only on a 2xx is the report inserted into the in-memory list (no optimistic creation).
+4. The chosen photo bytes are cached locally for instant display, then `POST /api/reports/:id/photo` uploads them raw (no multipart/base64).
+5. The backend validates magic bytes (JPEG/PNG/WebP only), writes the file atomically under a sha256 content-addressed key, enforces the 5 MB cap, and records `photoPath`. Ownership is checked: only the report's author may attach.
+
+**Citizen views / deletes reports**
+- `GET /api/reports` returns a paginated envelope (`data`, `pagination`). Citizens see only reports matching their state (and district when set); administrators see all.
+- `GET /api/reports/:id` returns one report; citizens are gated by the same state/district rule and never receive `adminNotes` or `statusHistory`. Administrators receive both.
+- `DELETE /api/reports/:id` is owner-only; database deletion cascades to `StatusHistory` and `AdminNote`, then the image is removed only when no other report references it.
+
+**Citizen views a report photo**
+- `GET /api/reports/:id/photo` is authenticated, re-checked against the same visibility rule as the report itself, path-traversal guarded (`resolveWithin`), served with `Cache-Control: private`.
+
+**Administrator actions**
+- `PATCH /api/reports/:id/status` (admin-only) transitions status inside a Prisma transaction that also writes one `StatusHistory` row; re-asserting the current status is a no-op (no duplicate history).
+- `POST /api/reports/:id/notes` (admin-only) creates an `AdminNote` attributed to the DB-loaded administrator id (never the request body), max 2000 chars.
+- `GET /api/reports` / `:id` for administrators include `statusHistory` and `adminNotes`.
+
+### Backend tech stack responsibilities
+
+| Layer | Technology | Responsibility |
+| --- | --- | --- |
+| Framework | Express 5.3.0 | HTTP routing, middleware, JSON API |
+| ORM / database | Prisma 7.10.1 + better-sqlite3 (SQLite) | Schema, queries, transactions, connection pool |
+| Auth | bcryptjs + jsonwebtoken (HS256) | Password hashing, JWT issue/verify (7-day expiry) |
+| Validation | zod | Request schemas for register, login, reports, status, notes |
+| Security | helmet, cors | Headers, CORS |
+| Image storage | custom `storage.ts` module | Magic-byte detection, content-addressed sha256 keys, atomic temp+rename write, traversal-safe path resolution, 5 MB limit |
+| Dev runtime | tsx | Run TypeScript directly |
+| Tests | vitest + supertest | Route-level tests for auth, reports, images, errors |
+
+Route set (all under `/api`): `GET /health`; `POST /auth/register`, `POST /auth/login` (rate-limited); `GET /reports`, `POST /reports`, `GET /reports/:id`, `PATCH /reports/:id/status`, `POST /reports/:id/notes`, `POST /reports/:id/photo`, `GET /reports/:id/photo`, `DELETE /reports/:id`.
+
+Database models (single SQLite file): `User`, `Report`, `StatusHistory`, `AdminNote`. Citizens register as `CITIZEN` only; `ADMIN` accounts are created out-of-band and carry no state/district, seeing every report.
+
+### Admin dashboard implementation status
+
+- Stack: React + Vite + TypeScript, hash-based routing.
+- Auth: `SessionProvider` holding a JWT in `sessionStorage`; `StoreProvider` for report list state.
+- Pages: `Login`, `Overview`, `Reports`, `ReportDetail`, `Activity`, `Map`, `Settings`.
+- Components: `ReportsTable`, `ReportPhoto`, `StatusBadge`, `SubmissionChart`, `CategoryBars`, `StatusDonut`.
+- API client (`api/client.ts`, `api/reports.ts`) calls the same backend `/api/*` routes with bearer auth.
+- Types (`types.ts`): `ReportStatus` = Submitted | Under Review | In Progress | Resolved | Rejected; `CategoryId` = roads | streetlights | water | waste | drainage | safety. `priority?` and `assignee?` are present on the admin `Report` interface but are explicitly "Not supplied by the backend".
+- The dashboard consumes backend endpoints that exist (report list, detail, status transition, notes). It is the authenticated administrator flow referenced in mobile "Future work"; no separate admin-only API surface is invented.
+
+### Prototype limitations (explicit)
+
+- Single SQLite database file on the backend host; no replication, failover, or managed database.
+- Images live on the local filesystem under `backend/uploads` (or `UPLOAD_DIR`), not an object store; the storage module is designed so an object store could replace it without touching routes.
+- Login rate limiting is in-memory per IP (fixed window); it resets on restart and is not shared across backend instances.
+- JWT secret (`JWT_SECRET`, ≥32 chars) and `DATABASE_URL` must be set in the environment; no fallbacks.
+- Plain HTTP is a development convenience; release Android builds require HTTPS (cleartext blocked).
+- No `/api/auth/me` endpoint; tokens are validated locally at launch and authoritatively on each protected request.
+- Mobile web target is unsupported (`dart:io` storage).
+- No offline queue; reports require a reachable backend to sign in, fetch, or submit.
+- `priority` and `assignee` fields exist only in the admin TypeScript types; the backend does not supply them.
+- Admin `ADMIN` accounts are created out-of-band; there is no self-service admin registration.
