@@ -170,24 +170,3 @@ CIVICLENS is available as a temporarily hosted prototype for demonstration and t
 > **Prototype Notice:** The hosted services are provided for demonstration and testing. CIVICLENS is not integrated with government or municipal authorities. Reports submitted through this prototype are not dispatched to real civic departments. Hosted services may be unavailable outside the demonstration period.
 ---
 
-## Default local URLs
-
-| Service | URL |
-| --- | --- |
-| Backend API | `http://localhost:3000` |
-| Mobile app (Android emulator) | `http://10.0.2.2:3000` (reaches the host's backend) |
-| Admin dev server | Printed by `npm run dev` (Vite default `http://localhost:5173`) |
-
-A quick backend smoke test once it is running:
-
-```bash
-curl -s http://localhost:3000/api/health
-```
-
----
-
-
-first so the mobile source is tracked as ordinary files.
-
-A root `.gitignore` is provided as a safety net for the common Node/Dart/editor
-artifacts when the whole tree is tracked from the root.
