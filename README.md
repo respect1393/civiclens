@@ -165,18 +165,7 @@ curl -s http://localhost:3000/api/health
 
 ---
 
-## Version control note
 
-This working directory is **not** a git repository at the root. Only `mobile/`
-contains a `.git`. Each project has its own `.gitignore`:
-
-- `mobile/.gitignore` — Flutter/Dart build output, `.dart_tool/`, `build/`.
-- `backend/.gitignore` — `node_modules/`, `dist/`, `.env*`, `*.db`, `uploads/`,
-  and the generated Prisma client.
-- `admin/.gitignore` — `node_modules/`, `dist/`, editor files.
-
-If you later initialize a repository at the root, be aware that the existing
-`mobile/.git` will be treated as an embedded repository; remove or convert it
 first so the mobile source is tracked as ordinary files.
 
 A root `.gitignore` is provided as a safety net for the common Node/Dart/editor
