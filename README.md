@@ -167,6 +167,9 @@ CIVICLENS is available as a temporarily hosted prototype for demonstration and t
 4. Submit a civic issue with a photograph and location details.
 5. View and manage submitted reports through the admin dashboard.
 
+### For Admin Dashboard : 
+1. Login Details are provided inside admin/auth.txt (Login detailed are provided here just for inspection).
+
 > **Prototype Notice:** The hosted services are provided for demonstration and testing. CIVICLENS is not integrated with government or municipal authorities. Reports submitted through this prototype are not dispatched to real civic departments. Hosted services may be unavailable outside the demonstration period.
 ---
 
