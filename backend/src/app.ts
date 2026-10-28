@@ -512,7 +512,17 @@ export function createApp(options: CreateAppOptions = {}) {
     }
   });
 
-  // GET /api/reports - Retrieve reports with pagination and geographic filtering
+  // GET /api/reports - Retrieve reports with pagination and geographic filtering.
+//
+// Access rules depend on the `mine` query parameter:
+//   - mine=true:  ownership view — only reports submitted by the authenticated
+//                 account (citizen or administrator).
+//   - mine unset: scope view — citizens see their state/district; administrators
+//                 see only their registered state across all districts.
+//
+// A `district` query parameter lets a citizen explore another district within
+// their own state. The state filter is always the citizen's registered state,
+// so a district from another state can never leak through.
   app.get("/api/reports", authenticate, async (req, res) => {
     try {
       const user = req.user as {
@@ -536,27 +546,45 @@ export function createApp(options: CreateAppOptions = {}) {
       const limit = parseLimit(req.query.limit);
       const skip = (page - 1) * limit;
 
-      // Build where clause based on user role
+      // `mine=true` requests an ownership view: only this account's reports.
+      const mine = req.query.mine === "true" || req.query.mine === "1";
+
+      // `district` lets a citizen explore another district within their state.
+      const districtParam =
+        typeof req.query.district === "string" ? req.query.district : undefined;
+
+      // Build where clause based on user role and view mode.
       let whereClause: any = {};
 
-      if (user.role === "CITIZEN") {
-        // Citizens can only see reports from their state
+      if (mine) {
+        // Ownership view: only reports submitted by the authenticated account.
+        whereClause = { userId: user.id };
+      } else if (user.role === "CITIZEN") {
+        // Citizens can only see reports from their own state.
         if (!user.state) {
-          // A citizen without a state must see no reports at all, including
-          // reports whose state is NULL. An always-false filter guarantees an
-          // empty result while preserving the pagination response shape.
+          // A citizen without a state must see no reports at all.
           whereClause = {
             id: { in: [] },
           };
         } else {
+          whereClause = { state: user.state };
+          // District: explicit exploration parameter overrides the registered
+          // district; otherwise fall back to the registered district.
+          const district = districtParam ?? user.district;
+          if (district) {
+            whereClause.district = district;
+          }
+        }
+      } else {
+        // Administrators see only reports from their registered state.
+        if (!user.state) {
           whereClause = {
-            state: user.state,
-            // If user has a district, filter by district too; otherwise, only state matters
-            ...(user.district ? { district: user.district } : {}),
+            id: { in: [] },
           };
+        } else {
+          whereClause = { state: user.state };
         }
       }
-      // Administrators see all reports (no geographic restrictions by default)
 
       // Get total count for pagination metadata
       const total = await prisma.report.count({ where: whereClause });
@@ -627,8 +655,14 @@ export function createApp(options: CreateAppOptions = {}) {
             error: "Forbidden: insufficient permissions",
           });
         }
+      } else {
+        // Administrators can only access reports from their registered state.
+        if (!user.state || !report.state || report.state !== user.state) {
+          return res.status(403).json({
+            error: "Forbidden: insufficient permissions",
+          });
+        }
       }
-      // Administrators can access any report
 
       res.json(report);
     } catch (error) {
@@ -660,16 +694,31 @@ export function createApp(options: CreateAppOptions = {}) {
         const idParam = req.params.id;
         const reportId = Array.isArray(idParam) ? idParam[0] : idParam;
 
-        const existing = await prisma.report.findUnique({
-          where: { id: reportId },
-          select: { id: true, status: true },
-        });
+const existing = await prisma.report.findUnique({
+        where: { id: reportId },
+        select: { id: true, status: true, state: true },
+      });
 
-        if (!existing) {
-          return res.status(404).json({ error: "Report not found" });
+      if (!existing) {
+        return res.status(404).json({ error: "Report not found" });
+      }
+
+      // Administrators can only modify reports in their registered state.
+      const user = req.user as {
+        id: string;
+        role: string;
+        state: string | null;
+        district: string | null;
+      };
+      if (user.role === "ADMIN") {
+        if (!user.state || !existing.state || existing.state !== user.state) {
+          return res.status(403).json({
+            error: "Forbidden: insufficient permissions",
+          });
         }
+      }
 
-        const { status } = result.data;
+      const { status } = result.data;
 
         // Re-asserting the current status is a no-op: return the report without
         // appending a duplicate, misleading history entry.
@@ -724,15 +773,22 @@ export function createApp(options: CreateAppOptions = {}) {
 
         const idParam = req.params.id;
         const reportId = Array.isArray(idParam) ? idParam[0] : idParam;
-        const user = req.user as { id: string };
+        const user = req.user as { id: string; state: string | null };
 
         const report = await prisma.report.findUnique({
           where: { id: reportId },
-          select: { id: true },
+          select: { id: true, state: true },
         });
 
         if (!report) {
           return res.status(404).json({ error: "Report not found" });
+        }
+
+        // Administrators can only add notes to reports in their registered state.
+        if (!user.state || !report.state || report.state !== user.state) {
+          return res.status(403).json({
+            error: "Forbidden: insufficient permissions",
+          });
         }
 
         const note = await prisma.adminNote.create({

@@ -54,6 +54,7 @@ const Color background = Color(0xFFF5F7FA);
 const Color teal = Color(0xFF13B8A6);
 const Color muted = Color(0xFF627D98);
 const Color borderColor = Color(0xFFE4EAF0);
+const Color _danger = Color(0xFFB3261E);
 
 class CivicLensApp extends StatelessWidget {
   const CivicLensApp({super.key, required this.repository, required this.auth});
@@ -96,6 +97,8 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
+  bool _myReportsLoadAttempted = false;
+  String? _exploreSelectedDistrict;
 
   void _showComingSoon(String feature) {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -122,6 +125,36 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _selectTab(int index) {
     setState(() => _selectedIndex = index);
+    if (index == 1) {
+      // Explore: district-scoped reports within the user's own state.
+      final user = AuthScope.of(context).user;
+      ReportScope.read(context).load(mine: false, district: user?.district);
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final auth = AuthScope.of(context);
+
+    if (auth.status != AuthStatus.authenticated) return;
+
+    if (!_myReportsLoadAttempted) {
+      _myReportsLoadAttempted = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) ReportScope.read(context).load(mine: true);
+      });
+    }
+  }
+
+  void _loadExplore() {
+    final user = AuthScope.of(context).user;
+    final defaultDistrict = user?.district;
+    setState(() => _exploreSelectedDistrict = defaultDistrict);
+    ReportScope.read(context).load(
+      mine: false,
+      district: defaultDistrict,
+    );
   }
 
   @override
@@ -132,12 +165,7 @@ class _HomeScreenState extends State<HomeScreen> {
           index: _selectedIndex,
           children: [
             _buildHome(),
-            _buildPlaceholder(
-              icon: Icons.map_outlined,
-              title: 'Explore your city',
-              description:
-                  'Discover reported civic issues around your community.',
-            ),
+            _buildExplore(),
             MyReportsScreen(onReportIssue: _openReportScreen),
             const ProfileScreen(),
           ],
@@ -673,11 +701,305 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildPlaceholder({
-    required IconData icon,
-    required String title,
-    required String description,
+  Widget _buildExplore() {
+    final authState = AuthScope.of(context);
+    final user = authState.user;
+    final repository = ReportScope.of(context);
+
+    if (authState.status != AuthStatus.authenticated) {
+      return _buildExploreSignedOut();
+    }
+
+    final userState = user?.state;
+
+    if (userState == null || userState.isEmpty) {
+      return _buildExploreEmpty(
+        'Location not set',
+        'Your state is not registered, so Explore cannot show reports. '
+        'Update your profile to start exploring.',
+      );
+    }
+
+    if (repository.isLoading && repository.reports.isEmpty) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(32),
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
+    if (repository.lastError != null && repository.reports.isEmpty) {
+      return _buildExploreError(repository.lastError!);
+    }
+
+    final reports = repository.reports;
+    if (reports.isEmpty) {
+      return _buildExploreEmpty(
+        'No reports found',
+        'No reports match the selected district in $userState.',
+      );
+    }
+
+    // Collect available districts from loaded reports for the selector.
+    final availableDistricts = <String>{};
+    for (final report in reports) {
+      if (report.district != null && report.district!.isNotEmpty) {
+        availableDistricts.add(report.district!);
+      }
+    }
+    final sortedDistricts = availableDistricts.toList()..sort();
+
+    final selectedDistrict = _exploreSelectedDistrict;
+    final isShowingAll = selectedDistrict == null;
+
+    return CustomScrollView(
+      slivers: [
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
+          sliver: SliverList(
+            delegate: SliverChildListDelegate([
+              _buildExploreHeader(userState),
+              const SizedBox(height: 20),
+              _buildDistrictSelector(
+                state: userState,
+                districts: sortedDistricts,
+                selected: selectedDistrict,
+                showingAll: isShowingAll,
+              ),
+              const SizedBox(height: 24),
+              _buildExploreSectionHeading(
+                'Reports in ${selectedDistrict ?? userState}',
+                '${reports.length} report${reports.length == 1 ? '' : 's'}',
+              ),
+              const SizedBox(height: 16),
+              ...reports.map((report) => _buildExploreReportCard(report)),
+            ]),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildExploreSignedOut() {
+    return const Center(
+      child: Padding(
+        padding: EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.map_outlined, size: 42, color: muted),
+            SizedBox(height: 16),
+            Text(
+              'Sign in to explore',
+              style: TextStyle(color: navy, fontSize: 20, fontWeight: FontWeight.w800),
+            ),
+            SizedBox(height: 8),
+            Text(
+              'Please sign in to see reports in your area.',
+              style: TextStyle(color: muted, fontSize: 14, height: 1.6),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildExploreHeader(String state) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Explore your city',
+          style: TextStyle(
+            color: navy,
+            fontSize: 24,
+            fontWeight: FontWeight.w800,
+            letterSpacing: -0.4,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          'Discovering reports in $state',
+          style: TextStyle(color: muted, fontSize: 13, height: 1.6),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDistrictSelector({
+    required String state,
+    required List<String> districts,
+    required String? selected,
+    required bool showingAll,
   }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: borderColor),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.location_on_outlined, size: 18, color: muted),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'Show reports in',
+                  style: TextStyle(color: navy, fontSize: 15, fontWeight: FontWeight.w800),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              FilterChip(
+                label: Text('All districts in $state'),
+                selected: showingAll,
+                onSelected: (picked) {
+                  setState(() => _exploreSelectedDistrict = null);
+                  ReportScope.read(context).load(mine: false);
+                },
+              ),
+              for (final district in districts)
+                FilterChip(
+                  label: Text(district),
+                  selected: selected == district,
+                  onSelected: (picked) {
+                    setState(() => _exploreSelectedDistrict = district);
+                    ReportScope.read(context).load(mine: false, district: district);
+                  },
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildExploreSectionHeading(String title, String subtitle) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(
+            color: navy,
+            fontSize: 19,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: 5),
+        Text(subtitle, style: TextStyle(color: muted, fontSize: 12)),
+      ],
+    );
+  }
+
+  Widget _buildExploreReportCard(CivicReport report) {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        onTap: () => _openReportDetails(report),
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            border: Border.all(color: borderColor),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                height: 48,
+                width: 48,
+                decoration: BoxDecoration(
+                  color: background,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(
+                  categoryIcon(report.category),
+                  color: navy,
+                  size: 25,
+                ),
+              ),
+              const SizedBox(width: 13),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            report.category.toUpperCase(),
+                            style: const TextStyle(
+                              color: muted,
+                              fontSize: 9,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 1.1,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      report.title,
+                      style: const TextStyle(
+                        color: navy,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.location_on_outlined,
+                          size: 13,
+                          color: muted,
+                        ),
+                        const SizedBox(width: 3),
+                        Expanded(
+                          child: Text(
+                            report.district != null && report.district!.isNotEmpty
+                                ? report.district!
+                                : report.locationLabel,
+                            style: const TextStyle(color: muted, fontSize: 11),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    ReportStatusChip(status: report.status, dense: true),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 6),
+              const Icon(
+                Icons.arrow_forward_ios_rounded,
+                color: muted,
+                size: 14,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildExploreEmpty(String title, String subtitle) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
@@ -690,7 +1012,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 color: teal.withValues(alpha: 0.10),
                 shape: BoxShape.circle,
               ),
-              child: Icon(icon, size: 42, color: navy),
+              child: const Icon(Icons.map_outlined, size: 42, color: navy),
             ),
             const SizedBox(height: 24),
             Text(
@@ -704,7 +1026,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 10),
             Text(
-              description,
+              subtitle,
               textAlign: TextAlign.center,
               style: const TextStyle(color: muted, fontSize: 14, height: 1.6),
             ),
@@ -713,4 +1035,39 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
+
+  Widget _buildExploreError(Object error) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.error_outline, size: 42, color: _danger),
+            const SizedBox(height: 16),
+            const Text(
+              'Could not load reports',
+              style: TextStyle(color: navy, fontSize: 20, fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Please try again later.',
+              style: TextStyle(color: muted, fontSize: 14, height: 1.6),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 20),
+            FilledButton(
+              onPressed: _loadExplore,
+              style: FilledButton.styleFrom(
+                backgroundColor: teal,
+                foregroundColor: navy,
+              ),
+              child: const Text('Try again'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
+

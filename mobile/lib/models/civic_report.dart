@@ -108,6 +108,8 @@ class CivicReport {
     this.origin = ReportOrigin.local,
     this.serverId,
     this.serverPhotoPath,
+    this.state,
+    this.district,
   });
 
   /// Unique, locally generated identifier.
@@ -167,6 +169,12 @@ class CivicReport {
   /// Whether a photo reference exists. The file itself may be missing on disk.
   bool get hasPhoto => photoFileName != null && photoFileName!.isNotEmpty;
 
+  /// The state this report belongs to, as recorded by the backend.
+  final String? state;
+
+  /// The district this report belongs to, as recorded by the backend.
+  final String? district;
+
   /// Whether this report stores a usable reporting point.
   ///
   /// Older entries parsed without coordinates fall back to 0, 0, and a point
@@ -206,6 +214,8 @@ class CivicReport {
     ReportOrigin? origin,
     String? serverId,
     String? serverPhotoPath,
+    String? state,
+    String? district,
   }) {
     return CivicReport(
       id: id ?? this.id,
@@ -225,6 +235,8 @@ class CivicReport {
       origin: origin ?? this.origin,
       serverId: serverId ?? this.serverId,
       serverPhotoPath: serverPhotoPath ?? this.serverPhotoPath,
+      state: state ?? this.state,
+      district: district ?? this.district,
     );
   }
 
@@ -246,6 +258,8 @@ class CivicReport {
     'origin': origin.name,
     'serverId': serverId,
     'serverPhotoPath': serverPhotoPath,
+    if (state != null) 'state': state,
+    if (district != null) 'district': district,
   };
 
   /// Rebuilds a report from persisted JSON.
@@ -297,6 +311,8 @@ class CivicReport {
       origin: _originFromName(json['origin']),
       serverId: _asNullableString(json['serverId']),
       serverPhotoPath: _asNullableString(json['serverPhotoPath']),
+      state: _asNullableString(json['state']),
+      district: _asNullableString(json['district']),
     );
   }
 }

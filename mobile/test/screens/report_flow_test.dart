@@ -134,7 +134,7 @@ void main() {
 
   group('with a report held by the city', () {
     setUp(() {
-      api.onFetch = ({required String token}) async => [
+      api.onFetch = ({required String token, bool mine = false, String? district}) async => [
         _serverReport('srv-1', title: 'Leak in pipe'),
       ];
     });
@@ -151,7 +151,7 @@ void main() {
       expect(find.text('WATER SUPPLY'), findsOneWidget);
       expect(find.text('Reported'), findsOneWidget);
       expect(repository.reportCount, 1);
-      expect(api.fetchTokens, hasLength(1));
+      expect(api.fetchCalls, hasLength(1));
     });
 
     testWidgets('report details show id, location and status timeline', (
@@ -178,7 +178,7 @@ void main() {
 
   group('deleting a server report', () {
     setUp(() {
-      api.onFetch = ({required String token}) async => [
+      api.onFetch = ({required String token, bool mine = false, String? district}) async => [
         _serverReport('srv-1', title: 'Leak in pipe'),
       ];
     });

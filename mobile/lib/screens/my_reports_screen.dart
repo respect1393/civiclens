@@ -54,11 +54,11 @@ class _MyReportsScreenState extends State<MyReportsScreen> {
     // Deferred to after this frame so a fetch that starts during layout never
     // calls setState in the middle of a build.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) ReportScope.read(context).load();
+      if (mounted) ReportScope.read(context).load(mine: true);
     });
   }
 
-  Future<void> _onRefresh() => ReportScope.read(context).load();
+  Future<void> _onRefresh() => ReportScope.read(context).load(mine: true);
 
   @override
   Widget build(BuildContext context) {

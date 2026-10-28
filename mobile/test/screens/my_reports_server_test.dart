@@ -101,7 +101,7 @@ void main() {
     tester,
   ) async {
     final api = FakeReportApiService(
-      onFetch: ({required String token}) async => [
+      onFetch: ({required String token, bool mine = false, String? district}) async => [
         _serverReport('srv-1', title: 'Pothole on Hill Road'),
       ],
     );
@@ -111,8 +111,8 @@ void main() {
     await settleTree(tester);
 
     // The retrieval ran once, with the signed-in citizen's bearer token.
-    expect(api.fetchTokens, hasLength(1));
-    expect(api.fetchTokens.single, env.auth.token);
+    expect(api.fetchCalls, hasLength(1));
+    expect(api.fetchCalls.single.token, env.auth.token);
 
     // The server record is listed with the status the server reported.
     expect(find.text('Pothole on Hill Road'), findsOneWidget);
@@ -140,7 +140,7 @@ void main() {
   ) async {
     var attempts = 0;
     final api = FakeReportApiService(
-      onFetch: ({required String token}) async {
+      onFetch: ({required String token, bool mine = false, String? district}) async {
         attempts += 1;
         if (attempts == 1) {
           throw ApiException(
@@ -173,7 +173,7 @@ void main() {
   ) async {
     final gate = Completer<List<CivicReport>>();
     final api = FakeReportApiService(
-      onFetch: ({required String token}) => gate.future,
+      onFetch: ({required String token, bool mine = false, String? district}) => gate.future,
     );
     final env = await _signedIn(api: api);
 
@@ -194,7 +194,7 @@ void main() {
 
   testWidgets('signed out, the backend is never called', (tester) async {
     final api = FakeReportApiService(
-      onFetch: ({required String token}) async => [
+      onFetch: ({required String token, bool mine = false, String? district}) async => [
         _serverReport('srv-1', title: 'Should never appear'),
       ],
     );
@@ -203,7 +203,7 @@ void main() {
     await _pump(tester, repository: env.repository, auth: env.auth);
     await settleTree(tester);
 
-    expect(api.fetchTokens, isEmpty);
+    expect(api.fetchCalls, isEmpty);
     expect(env.auth.status, AuthStatus.unauthenticated);
     expect(
       find.text('Sign in to see the reports you have submitted.'),
@@ -215,7 +215,7 @@ void main() {
   testWidgets('pull to refresh asks the city again', (tester) async {
     var fetches = 0;
     final api = FakeReportApiService(
-      onFetch: ({required String token}) async {
+      onFetch: ({required String token, bool mine = false, String? district}) async {
         fetches += 1;
         final base = [
           for (var i = 0; i < 6; i++)
@@ -246,7 +246,7 @@ void main() {
       viewport: const Size(800, 500),
     );
     await settleTree(tester);
-    expect(api.fetchTokens, hasLength(1));
+    expect(api.fetchCalls, hasLength(1));
     expect(find.text('Newest on server'), findsNothing);
 
     await tester.fling(find.byType(ListView), const Offset(0, 400), 1000);
@@ -254,14 +254,14 @@ void main() {
     await settleTree(tester);
 
     expect(find.text('Newest on server'), findsOneWidget);
-    expect(api.fetchTokens, hasLength(2));
+    expect(api.fetchCalls, hasLength(2));
   });
 
   testWidgets('a server report opens with its status and no invented history', (
     tester,
   ) async {
     final api = FakeReportApiService(
-      onFetch: ({required String token}) async => [
+      onFetch: ({required String token, bool mine = false, String? district}) async => [
         _serverReport('srv-6', title: 'Pothole on Hill Road'),
       ],
     );

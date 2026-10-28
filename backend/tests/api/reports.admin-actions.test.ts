@@ -11,8 +11,8 @@ async function createAdmin() {
   const { user } = await createUser({
     email: `admin-${Math.random().toString(36).slice(2)}@example.com`,
     role: "ADMIN",
-    state: null,
-    district: null,
+    state: "Maharashtra",
+    district: "Pune",
   });
   return {
     user,

@@ -127,8 +127,8 @@ describe("authenticate middleware (via GET /api/reports)", () => {
     const { user: admin } = await createUser({
       email: "db-role-admin@example.com",
       role: "ADMIN",
-      state: null,
-      district: null,
+      state: "Maharashtra",
+      district: "Pune",
     });
     const { user: other } = await createUser({
       email: "other@example.com",
@@ -149,7 +149,7 @@ describe("authenticate middleware (via GET /api/reports)", () => {
       .set("Authorization", bearer(liarToken));
 
     expect(res.status).toBe(200);
-    // Administrators see every report, so the citizen-style filter was ignored.
-    expect(res.body.pagination.total).toBe(2);
+    // Administrators see only their own state's reports, not every report.
+    expect(res.body.pagination.total).toBe(1);
   });
 });

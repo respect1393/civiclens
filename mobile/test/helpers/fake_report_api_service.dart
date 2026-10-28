@@ -20,7 +20,12 @@ class FakeReportApiService implements ReportApiService {
   })?
   onCreate;
 
-  Future<List<CivicReport>> Function({required String token})? onFetch;
+  Future<List<CivicReport>> Function({
+    required String token,
+    bool mine,
+    String? district,
+  })?
+  onFetch;
 
   Future<void> Function({required String token, required String reportId})?
   onDelete;
@@ -43,7 +48,7 @@ class FakeReportApiService implements ReportApiService {
   Uint8List? photoBytes;
 
   final List<({String token, CivicReport report})> createCalls = [];
-  final List<String> fetchTokens = [];
+  final List<({String token, bool mine, String? district})> fetchCalls = [];
   final List<
     ({String token, String reportId, Uint8List bytes, String contentType})
   >
@@ -81,11 +86,15 @@ class FakeReportApiService implements ReportApiService {
   }
 
   @override
-  Future<List<CivicReport>> fetchReports({required String token}) {
-    fetchTokens.add(token);
+  Future<List<CivicReport>> fetchReports({
+    required String token,
+    bool mine = false,
+    String? district,
+  }) {
+    fetchCalls.add((token: token, mine: mine, district: district));
     final handler = onFetch;
     if (handler == null) return Future.value(<CivicReport>[]);
-    return handler(token: token);
+    return handler(token: token, mine: mine, district: district);
   }
 
   @override

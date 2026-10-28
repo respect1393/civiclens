@@ -79,11 +79,16 @@ class ReportRepository extends ChangeNotifier {
 
   /// Fetches the reports visible to the signed-in citizen from the backend.
   ///
-  /// Safe to call repeatedly. When a request fails the previous (server-sourced)
-  /// list is kept and [lastError] is set, so the UI can show an honest error
-  /// instead of silently reverting to local or demo data. Signed-out callers
-  /// end with an empty list and no error.
-  Future<void> load() async {
+  /// When [mine] is true, requests only reports submitted by the authenticated
+  /// account. When false, requests reports within the account's geographic
+  /// scope. When [district] is provided, results are limited to that district
+  /// (the backend scopes it to the user's own state).
+  ///
+  /// Safe to call repeatedly. When a request fails the previous
+  /// (server-sourced) list is kept and [lastError] is set, so the UI can show
+  /// an honest error instead of silently reverting to local or demo data.
+  /// Signed-out callers end with an empty list and no error.
+  Future<void> load({bool mine = false, String? district}) async {
     if (_isLoading) return;
     _isLoading = true;
     _lastError = null;
@@ -96,7 +101,11 @@ class ReportRepository extends ChangeNotifier {
         _reports.clear();
         _lastError = null;
       } else {
-        final fetched = await service.fetchReports(token: token);
+        final fetched = await service.fetchReports(
+          token: token,
+          mine: mine,
+          district: district,
+        );
         fetched.sort((a, b) => b.createdAt.compareTo(a.createdAt));
         _reports
           ..clear()

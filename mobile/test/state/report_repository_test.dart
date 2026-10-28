@@ -46,12 +46,12 @@ void main() {
       expect(repository.isLoaded, isTrue);
       expect(repository.reports, isEmpty);
       expect(repository.lastError, isNull);
-      expect(api.fetchTokens, isEmpty);
+      expect(api.fetchCalls, isEmpty);
     });
 
     test('fetches server reports and sorts them newest first', () async {
       final api = FakeReportApiService(
-        onFetch: ({required token}) async => [
+        onFetch: ({required token, bool mine = false, String? district}) async => [
           _serverReport('old', createdAt: DateTime.utc(2026, 1, 1)),
           _serverReport('new', createdAt: DateTime.utc(2026, 3, 1)),
         ],
@@ -64,7 +64,10 @@ void main() {
 
       await repository.load();
 
-      expect(api.fetchTokens, ['token-1']);
+      expect(api.fetchCalls, hasLength(1));
+      expect(api.fetchCalls.single.token, 'token-1');
+      expect(api.fetchCalls.single.mine, isFalse);
+      expect(api.fetchCalls.single.district, isNull);
       expect(repository.reports.map((r) => r.id).toList(), ['new', 'old']);
       expect(repository.reportCount, 2);
       expect(repository.lastError, isNull);
@@ -73,7 +76,7 @@ void main() {
     test('keeps the previous list and records the error on failure', () async {
       var attempts = 0;
       final api = FakeReportApiService(
-        onFetch: ({required token}) async {
+        onFetch: ({required token, bool mine = false, String? district}) async {
           attempts += 1;
           if (attempts == 1) return [_serverReport('srv-1')];
           throw ApiException(
@@ -317,7 +320,7 @@ void main() {
             failure: ApiFailure.network,
             message: 'The connection dropped.',
           ),
-          onFetch: ({required token}) async => [
+          onFetch: ({required token, bool mine = false, String? district}) async => [
             CivicReport(
               id: 'srv-99',
               category: 'Water Supply',

@@ -162,7 +162,16 @@ abstract class ReportApiService {
   });
 
   /// Retrieves the reports visible to the current citizen.
-  Future<List<CivicReport>> fetchReports({required String token});
+  ///
+  /// When [mine] is true, requests only reports submitted by the authenticated
+  /// account (`GET /api/reports?mine=true`); otherwise requests reports within
+  /// the account's geographic scope. When [district] is provided, results are
+  /// limited to that district (the backend scopes it to the user's own state).
+  Future<List<CivicReport>> fetchReports({
+    required String token,
+    bool mine = false,
+    String? district,
+  });
 
   /// Uploads [bytes] as the report's image and returns the stored reference.
   ///
@@ -224,8 +233,20 @@ class HttpReportApiService implements ReportApiService {
   }
 
   @override
-  Future<List<CivicReport>> fetchReports({required String token}) async {
-    final response = await _client.getJson('/api/reports', token: token);
+  Future<List<CivicReport>> fetchReports({
+    required String token,
+    bool mine = false,
+    String? district,
+  }) async {
+    final query = <String, String>{};
+    if (mine) query['mine'] = 'true';
+    if (district != null && district.trim().isNotEmpty) {
+      query['district'] = district.trim();
+    }
+    final path = query.isNotEmpty
+        ? '/api/reports?${Uri(queryParameters: query)}'
+        : '/api/reports';
+    final response = await _client.getJson(path, token: token);
     final data = response['data'];
     if (data is! List) {
       throw ApiException(
